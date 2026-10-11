@@ -30,7 +30,7 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { z } from "zod/v4";
 import { RouteMap } from "./route-map";
 import { formatDuration, formatPrice, useToolData } from "./use-tool-data";
@@ -685,39 +685,38 @@ export const DestinationCard = defineComponent({
     const grid = useContext(GridContext);
     const isSelected = grid?.selected === props.code;
     return (
-      <div className={`tc-dest${isSelected ? " tc-dest--selected" : ""}`}>
-        <div className="tc-dest__banner" style={{ background: gradientFor(props.code) }}>
-          <span className="tc-dest__code">{props.code}</span>
-        </div>
+      <article className={`tc-dest${isSelected ? " tc-dest--selected" : ""}`} aria-label={`${props.city}, ${props.country}`}>
         <div className="tc-dest__body">
-          <div className="tc-dest__title">
-            {props.city}
-            <span className="tc-muted">, {props.country}</span>
+          <div>
+            <h3 className="tc-dest__title">{props.city}</h3>
+            <div className="tc-dest__location">{props.country} <span aria-hidden="true">·</span> {props.code}</div>
           </div>
-          <p className="tc-dest__tagline">{props.tagline}</p>
-          <div className="tc-dest__meta">
-            {typeof props.fromPrice === "number" ? (
-              <span>
-                Flights from <strong>{formatPrice(props.fromPrice, props.currency ?? "USD")}</strong>
-              </span>
-            ) : null}
-            <span className="tc-muted">Best: {props.bestMonths}</span>
-            {props.weather ? <span className="tc-muted">{props.weather}</span> : null}
-          </div>
-          <div className="tc-row">
-            <Button
-              size="small"
-              variant={isSelected ? "secondary" : "primary"}
+          {Number.isFinite(props.fromPrice) ? (
+            <div className="tc-dest__fare">
+              <span className="tc-dest__fare-label">Flights from</span>
+              <strong>{formatPrice(props.fromPrice, props.currency ?? "USD")}</strong>
+              <span className="tc-dest__fare-note">One-way · 1 adult · economy</span>
+            </div>
+          ) : null}
+          <p className="tc-dest__tagline" title={props.tagline}>{props.tagline}</p>
+          <dl className="tc-dest__meta">
+            <div><dt>Best time</dt><dd>{props.bestMonths}</dd></div>
+            {props.weather ? <div><dt>Weather</dt><dd>{props.weather}</dd></div> : null}
+          </dl>
+          <div className="tc-dest__footer">
+            <button
+              type="button"
+              className="tc-dest__action"
+              disabled={!grid}
+              aria-label={`${isSelected ? "Hide details for" : "Details and fares for"} ${props.city}`}
               aria-expanded={isSelected}
-              onClick={() =>
-                grid?.toggle({ code: props.code, city: props.city, country: props.country, currency: props.currency ?? "USD" })
-              }
+              onClick={() => grid?.toggle({ code: props.code, city: props.city, country: props.country, currency: props.currency ?? "USD" })}
             >
-              {isSelected ? "Hide details" : "Details & fares"}
-            </Button>
+              <span>{isSelected ? "Hide details" : "Details & fares"}</span><ChevronRight size={15} aria-hidden="true" />
+            </button>
           </div>
         </div>
-      </div>
+      </article>
     );
   },
 });
@@ -725,7 +724,7 @@ export const DestinationCard = defineComponent({
 export const DestinationGrid = defineComponent({
   name: "DestinationGrid",
   description:
-    "A grid of 2-6 DestinationCards. origin is the traveller's IATA airport; month (YYYY-MM, optional) is the travel month. Clicking a card opens a panel below the grid with weather, best months, daily budget, a fare calendar, flights and booking, without a new message.",
+    "A horizontally scrollable set of 2-6 DestinationCards. origin is the traveller's IATA airport; month (YYYY-MM, optional) is the travel month. Clicking a card opens a panel below the cards with weather, best months, daily budget, a fare calendar, flights and booking, without a new message.",
   props: z.object({
     origin: z.string(),
     destinations: z.array(DestinationCard.ref),
@@ -733,6 +732,25 @@ export const DestinationGrid = defineComponent({
   }),
   component: ({ props, renderNode }) => {
     const [selected, setSelected] = useState<CardInfo | null>(null);
+    const [showMap, setShowMap] = useState(false);
+    const track = useRef<HTMLDivElement>(null);
+    const [scroll, setScroll] = useState({ back: false, next: false });
+    useEffect(() => {
+      const element = track.current;
+      if (!element) return;
+      const measure = () => setScroll({ back: element.scrollLeft > 2, next: element.scrollLeft + element.clientWidth < element.scrollWidth - 2 });
+      const observer = new ResizeObserver(measure);
+      observer.observe(element);
+      element.addEventListener("scroll", measure, { passive: true });
+      measure();
+      return () => { observer.disconnect(); element.removeEventListener("scroll", measure); };
+    }, [props.destinations.length]);
+    const scrollCards = (direction: number) => {
+      const element = track.current;
+      if (!element) return;
+      const step = (element.firstElementChild?.getBoundingClientRect().width ?? element.clientWidth) + 12;
+      element.scrollBy({ left: direction * step, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    };
     return (
       <GridContext.Provider
         value={{
@@ -742,13 +760,24 @@ export const DestinationGrid = defineComponent({
         }}
       >
         <div className="tc-gridwrap">
-          <DestinationsMap
+          <div className="tc-destinations__toolbar">
+            <span>{props.destinations.length} {props.destinations.length === 1 ? "destination" : "destinations"} <span className="tc-muted">· from {props.origin}</span></span>
+            {(scroll.back || scroll.next) && <div className="tc-destinations__controls" role="group" aria-label="Browse destinations">
+              <button type="button" aria-label="Previous destinations" disabled={!scroll.back} onClick={() => scrollCards(-1)}><ChevronLeft size={16} aria-hidden="true" /></button>
+              <button type="button" aria-label="Next destinations" disabled={!scroll.next} onClick={() => scrollCards(1)}><ChevronRight size={16} aria-hidden="true" /></button>
+            </div>}
+          </div>
+          <div className="tc-grid" ref={track} role="region" aria-label="Destination suggestions; scroll horizontally to compare" tabIndex={0}>{renderNode(props.destinations)}</div>
+          <div className="tc-destinations__footnote">
+            <span>Indicative fares · demo data</span>
+            <button type="button" aria-expanded={showMap} onClick={() => setShowMap((value) => !value)}>{showMap ? "Hide map" : "View map"}<ChevronDown size={14} aria-hidden="true" /></button>
+          </div>
+          {showMap && <DestinationsMap
             origin={props.origin}
             nodes={props.destinations as unknown[]}
             selected={selected?.code ?? null}
             onSelect={(card) => setSelected((cur) => (cur?.code === card.code ? null : card))}
-          />
-          <div className="tc-grid">{renderNode(props.destinations)}</div>
+          />}
           {selected ? (
             <DestinationDetail
               key={selected.code}
@@ -1572,12 +1601,6 @@ export const TripItinerary = defineComponent({
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────────
-
-function gradientFor(code: string) {
-  let h = 0;
-  for (const c of code ?? "") h = (h * 31 + c.charCodeAt(0)) % 360;
-  return `linear-gradient(135deg, hsl(${h} 70% 55%), hsl(${(h + 50) % 360} 75% 45%))`;
-}
 
 function heat(t: number) {
   // green (cheap) → amber → red (expensive), kept light so text stays readable
