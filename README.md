@@ -20,6 +20,7 @@ flowchart TB
     Comp["Travel components<br/>SVG maps · fare calendar · flights · budget · insights"]
     Hist["Chat history<br/>5 chats in localStorage, pending turns"]
     Badge["Sidebar counter<br/>≈ answers left today"]
+    AdminUI["Guest label · admin sign-in<br/>read-only chat viewer"]
   end
 
   subgraph Vercel["Vercel · Next.js"]
@@ -30,11 +31,12 @@ flowchart TB
     AirAPI["/api/airports<br/>name → IATA for maps"]
     Quota["/api/quota"]
     Admin["/api/admin/llm<br/>npm run llm:report"]
+    Session["/api/session · /api/chats<br/>signed cookies · admin archive"]
   end
 
   subgraph External["Free external services"]
     LLMs["LLM providers<br/>Gemini · Groq · Cloudflare Workers AI · OpenRouter :free"]
-    D1[("Cloudflare D1<br/>cache · turn logs · model health · usage · results")]
+    D1[("Cloudflare D1<br/>cache · turn logs · model health · usage · results · chat archive")]
   end
 
   UI <-->|"turn (runId)"| Chat
@@ -47,6 +49,8 @@ flowchart TB
   Comp --> AirAPI
   Badge --> Quota --> Router
   Admin --> Router
+  Chat -.->|"archive copy (background)"| D1
+  AdminUI --> Session --> D1
 ```
 
 ### One chat turn
@@ -134,6 +138,40 @@ sequenceDiagram
   benched models, today's usage and recent turns. `/api/quota` powers the sidebar counter: a daily budget
   (`DAILY_ANSWER_BUDGET`, default 150) minus AI answers given today, reset at 00:00 UTC.
 
+## Guests and admin
+
+There are no user accounts. Everyone is either an anonymous **guest** or the **admin**.
+
+**Guests**
+- On the first request, `/api/session` or `/api/chat` gives the browser a random guest ID in a
+  signed, HttpOnly cookie (`wf_guest`, kept for a year). The sidebar shows it as
+  "Guest 0D148F76". Guests don't sign up or enter anything.
+- A guest's own chat list is still the 5 most recent chats saved in their browser
+  (`chat-storage.ts`). Guests can't see anyone else's chats.
+- Every turn is also copied to a server archive (`chat_archive` table in D1, production only;
+  local dev keeps it in memory), tagged with the guest ID. The copy is written in the background
+  with `waitUntil`, so it never delays the answer, and a failure is only logged.
+
+**Admin**
+- The sidebar has an "Admin sign in" box. The password is checked against `ADMIN_PASSWORD`, and
+  a signed `wf_admin` cookie is then set for 7 days. "Sign out" clears it.
+- When signed in, the sidebar lists **all chats from all guests**, newest first, 50 at a time,
+  each labelled with its guest ID and date. Opening one shows the conversation read-only, with
+  answers rendered as the real components (not clickable). If a turn was still running when
+  it was saved, the stored answer is filled in from the router.
+- On first sign-in, the admin's own older chats in this browser are imported into the archive.
+  Existing records win.
+- `/api/chats` returns 404 to anyone who isn't the admin.
+
+**Security**
+- Cookies are signed with HMAC-SHA256 using `SESSION_SECRET` and compared in constant time.
+  Signing a cookie by hand doesn't work without the secret.
+- Admin sign-in is switched off unless both `ADMIN_PASSWORD` and a `SESSION_SECRET` of 32+
+  characters are set.
+- `ADMIN_TOKEN` is separate: it only protects the router report (`/api/admin/llm`).
+- Visitors' chats are stored on the server and readable by the admin. Say so to users if you
+  share the app publicly.
+
 ## Files
 
 | Path | Purpose |
@@ -154,6 +192,9 @@ sequenceDiagram
 | `src/lib/airport-coords.ts`, `src/data/` | Airport dataset (OurAirports) and the light coordinates file for maps |
 | `src/app/api/airports/route.ts` | Name → IATA for maps (cached, no model) |
 | `src/app/api/chat/route.ts` | `POST` turn (AG-UI over SSE) and `GET ?id=` stored answer |
+| `src/lib/guest-session.ts` | Signed guest and admin cookies |
+| `src/lib/chat-archive.ts` | Server chat archive (D1 in production, memory locally) |
+| `src/components/admin-chats.tsx` | Sidebar: guest label, admin sign-in, read-only chat viewer |
 | `src/app/api/session/route.ts` | Anonymous guest identity and password-based admin sign-in |
 | `src/app/api/chats/route.ts` | Admin's read-only archive of all chats |
 | `src/app/api/tools/[name]/route.ts` | Read-only tools for the components |
@@ -182,13 +223,11 @@ store.
 Hosted on Vercel (project `wayfinder-trips`). Secrets are sensitive production environment
 variables there: provider keys, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `D1_DATABASE_ID`
 and `ADMIN_TOKEN` (for the router report). Admin chat sign-in also requires `ADMIN_PASSWORD`
-and an independent, random `SESSION_SECRET` of at least 32 characters. The guest ID is assigned
-automatically with a signed cookie; guests do not need to enter anything. Admin sign-in uses the
-password, and archived chats open read-only from the sidebar.
+and an independent, random `SESSION_SECRET` of at least 32 characters (see
+[Guests and admin](#guests-and-admin)).
 
-```bash
-npx vercel deploy --prod
-```
+The GitHub repo is connected to Vercel: pushing to `main` deploys to production, and pushing
+any other branch makes a preview deployment.
 
 Free capacity is roughly 150 fresh AI answers per day across all providers, and cached answers
 don't count toward it. The sidebar counter shows a simple estimate (`DAILY_ANSWER_BUDGET`).

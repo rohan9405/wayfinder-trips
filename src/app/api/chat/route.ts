@@ -16,19 +16,18 @@ const chatHandler = aguiChatHandler(router, { waitUntil });
 
 export async function POST(req: Request) {
   const session = identity(req);
-  try {
-    const body = await req.clone().json() as { threadId?: unknown; runId?: unknown; messages?: unknown };
-    if (typeof body.threadId === "string") {
-      await saveChat({
+  const body = await req.clone().json().catch(() => ({})) as { threadId?: unknown; runId?: unknown; messages?: unknown };
+  if (typeof body.threadId === "string") {
+    // Archive in the background so the answer starts streaming straight away.
+    // Archive failures must not interrupt trip planning.
+    waitUntil(
+      saveChat({
         id: body.threadId,
         owner: session.owner,
         messages: body.messages,
         runId: typeof body.runId === "string" ? body.runId : null,
-      });
-    }
-  } catch (error) {
-    // Archive failures must not interrupt trip planning.
-    console.error("[chat-archive] save failed", error);
+      }).catch((error) => console.error("[chat-archive] save failed", error)),
+    );
   }
   const response = await chatHandler(req);
   if (session.setCookie) response.headers.append("Set-Cookie", session.setCookie);
