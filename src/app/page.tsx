@@ -2,7 +2,7 @@
 
 import { AgentInterface, useSystemThemeMode } from "@openuidev/react-ui";
 import { CalendarDays, Compass, Map, Plane, Scale, Sparkles } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { QuotaBadge } from "@/components/quota-badge";
 import { AdminChats } from "@/components/admin-chats";
 import { createLocalChatStorage, createPersistentChatLLM } from "@/lib/chat-storage";
@@ -47,12 +47,25 @@ const starters = [
 ];
 
 export default function Page() {
+  const shell = useRef<HTMLDivElement>(null);
   const mode = useSystemThemeMode();
   const theme = useMemo(() => ({ mode }), [mode]);
   const storage = useMemo(() => createLocalChatStorage(CHAT_URL), []);
 
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    // Mobile keyboards can resize the visible area without resizing the layout viewport.
+    const resize = () => {
+      if (viewport.scale === 1) shell.current?.style.setProperty("--wf-viewport-height", `${Math.round(viewport.height)}px`);
+    };
+    resize();
+    viewport.addEventListener("resize", resize);
+    return () => viewport.removeEventListener("resize", resize);
+  }, []);
+
   return (
-    <div className="app-shell">
+    <div className="app-shell" ref={shell}>
       <AgentInterface
         llm={llm}
         storage={storage}

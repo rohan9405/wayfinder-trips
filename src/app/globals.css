@@ -7,9 +7,26 @@ body {
   background: var(--openui-background);
 }
 
+/* Responses also render in the admin portal, outside the chat shell's reset. */
+.openui-card,
+.openui-card *,
+.wf-chat-overlay,
+.wf-chat-overlay * {
+  box-sizing: border-box;
+}
+.openui-card {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
 .app-shell {
-  height: 100dvh;
+  height: var(--wf-viewport-height, 100dvh);
   overflow: hidden;
+}
+.app-shell .openui-agent-container {
+  width: 100%;
+  height: 100%;
 }
 
 /* Let the welcome content and starters shrink before they displace the composer. */
@@ -24,7 +41,7 @@ body {
 }
 .app-shell .openui-agent-composer-slot {
   min-height: 0;
-  flex-shrink: 1;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
 }
@@ -783,8 +800,8 @@ button.tc-cal__day:hover {
   cursor: pointer;
 }
 .tc-day__head > .tc-strong { min-width: 0; }
-.tc-day__chev { flex: none; }
 .tc-day__chev {
+  flex: none;
   margin-left: auto;
   color: var(--openui-text-neutral-secondary);
   transition: transform 0.15s;
@@ -1109,3 +1126,19 @@ button.tc-cal__day:hover {
 .openui-agent-sidebar-container--collapsed .tc-quota__body {
   display: none;
 }
+.openui-select-content {
+  max-width: calc(100vw - 20px);
+}
+.openui-select-item-text {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.openui-card .openui-select-trigger {
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+}
+.openui-card .openui-select-trigger > span { min-width: 0; }
+.openui-card .openui-select-trigger svg { flex-shrink: 0; }
