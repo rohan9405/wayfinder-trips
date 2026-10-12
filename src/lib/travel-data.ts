@@ -206,10 +206,24 @@ function requireFutureDate(date: string) {
   if (date < today()) throw new TravelDataError(`${date} is in the past. Today is ${today()}.`);
 }
 
+// Regions (ISO country codes) for "flights to Europe"-style requests.
+const REGIONS: Record<string, string[]> = {
+  europe: ["FR", "GB", "IT", "ES", "PT", "NL", "CH", "DE", "TR", "GR", "AT", "CZ", "IE", "BE", "DK", "SE", "NO", "FI", "PL", "HU"],
+  southeast_asia: ["TH", "SG", "ID", "MY", "VN", "PH", "KH", "LA", "MM"],
+  east_asia: ["JP", "KR", "CN", "HK", "TW", "MO"],
+  south_asia: ["IN", "LK", "NP", "MV", "BT", "BD"],
+  middle_east: ["AE", "QA", "OM", "SA", "JO", "BH", "KW"],
+  americas: ["US", "CA", "MX", "BR", "AR", "PE", "CO"],
+  oceania: ["AU", "NZ", "FJ"],
+  africa: ["ZA", "KE", "EG", "MA", "MU", "TZ", "SC"],
+};
+export const REGION_NAMES = Object.keys(REGIONS);
+
 export function suggestDestinations(input: {
   origin: string;
   month?: number;
   interests?: string[];
+  region?: string;
   maxFlightPrice?: number;
   currency: Currency;
   limit?: number;
@@ -219,7 +233,14 @@ export function suggestDestinations(input: {
   const interests = (input.interests ?? []).map((i) => i.toLowerCase());
   const travelDate = month ? nextDateInMonth(month) : addDays(today(), 30);
 
-  const scored = DESTINATIONS.filter((d) => d.airport !== origin.code).map((d) => {
+  const regionCountries = input.region ? REGIONS[input.region] : undefined;
+  if (input.region && !regionCountries) {
+    throw new TravelDataError(`Unknown region "${input.region}". Use one of: ${REGION_NAMES.join(", ")}.`);
+  }
+
+  const scored = DESTINATIONS.filter(
+    (d) => d.airport !== origin.code && (!regionCountries || regionCountries.includes(airportByCode(d.airport)!.countryCode)),
+  ).map((d) => {
     const airport = airportByCode(d.airport)!;
     const fare = convert(dailyFareUsd(origin, airport, travelDate), input.currency);
     const interestMatches = interests.filter((i) => d.interests.some((x) => x.includes(i) || i.includes(x)));
@@ -247,11 +268,13 @@ export function suggestDestinations(input: {
   const results = scored
     .filter((d) => (input.maxFlightPrice ? d.fromPrice <= input.maxFlightPrice : true))
     .sort((a, b) => b.score - a.score)
-    .slice(0, input.limit ?? 6)
+    // A region request is a choice of entry point, so show every gateway we know there.
+    .slice(0, input.limit ?? (regionCountries ? 8 : 6))
     .map(({ score: _score, ...rest }) => rest);
 
   return {
     origin: `${origin.city} (${origin.code})`,
+    region: input.region ?? "any",
     month: month ? monthName(month) : "any",
     currency: input.currency,
     note: "fromPrice is an indicative one-way economy fare for one adult; dailyBudget is a rough mid-range spend per person per day.",
@@ -467,6 +490,7 @@ function buildOffers(search: FlightSearch) {
       durationMinutes: duration,
       stops,
       layoverCity: stops ? pickLayover(origin, dest, rand) : null,
+      layoverMinutes: layover,
       cabin: search.cabin,
       adults: search.adults,
       totalPrice: total,
@@ -507,6 +531,7 @@ export function searchFlights(search: FlightSearch & { maxStops?: number }) {
         ? { date: best.date, saving: `about ${Math.round((1 - best.fare / thisDay) * 100)}% cheaper` }
         : null,
     events,
+    flightShape: flightShape(offers),
   };
   return {
     insights,
@@ -520,6 +545,32 @@ export function searchFlights(search: FlightSearch & { maxStops?: number }) {
         ? `${all.length - offers.length} flights with more than ${search.maxStops} stop(s) hidden. totalPrice covers all adults, taxes included.`
         : "totalPrice covers all adults, taxes included. Times are local.",
     offers,
+  };
+}
+
+/** What matters when choosing between these flights: non-stop vs connecting trade-offs. */
+function flightShape(offers: { stops: number; totalPrice: number; durationMinutes: number; layoverMinutes: number; layoverCity: string | null; departTime: string }[]) {
+  if (!offers.length) return null;
+  const nonstop = offers.filter((o) => o.stops === 0);
+  const connecting = offers.filter((o) => o.stops > 0);
+  const cheapest = (list: typeof offers) => (list.length ? Math.min(...list.map((o) => o.totalPrice)) : null);
+  const fastest = offers.reduce((a, b) => (b.durationMinutes < a.durationMinutes ? b : a));
+  const layovers = connecting.map((o) => o.layoverMinutes);
+  return {
+    nonstopCount: nonstop.length,
+    connectingCount: connecting.length,
+    cheapestNonstop: cheapest(nonstop),
+    cheapestConnecting: cheapest(connecting),
+    fastestMinutes: fastest.durationMinutes,
+    layoverRangeMinutes: layovers.length ? [Math.min(...layovers), Math.max(...layovers)] : null,
+    layoverCities: [...new Set(connecting.map((o) => o.layoverCity).filter(Boolean))],
+    departureTimes: offers.map((o) => o.departTime),
+    decisionAxis:
+      nonstop.length === 0
+        ? "All flights connect: compare layover length, layover city, departure/arrival times and total duration."
+        : connecting.length === 0
+          ? "All flights are non-stop: compare departure/arrival times and price."
+          : "Mix of non-stop and connecting: weigh the non-stop premium against the time a connection adds.",
   };
 }
 
