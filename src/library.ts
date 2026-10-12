@@ -15,6 +15,7 @@ import {
   FlightResults,
   FlightReview,
   Itinerary,
+  OriginNote,
   PriceCalendar,
   TravelInsights,
   TripBudget,
@@ -23,6 +24,7 @@ import {
 } from "./components/travel";
 
 const travelComponents = [
+  OriginNote,
   DestinationGrid,
   DestinationCard,
   PriceCalendar,

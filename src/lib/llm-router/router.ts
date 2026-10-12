@@ -45,6 +45,12 @@ export interface RouterConfig {
   };
   /** Turn a model's final text into what the client shows; return "" if nothing usable. */
   finalizeAnswer?: (text: string) => string;
+  /**
+   * True when an answer shows data that must come from a tool in this turn. Such an answer
+   * from a model that called no tools is rejected and the next model is tried (the last
+   * model's answer is kept, so a turn never fails on this check alone).
+   */
+  needsTools?: (answer: string) => boolean;
   /** Turn a plain notice (e.g. the "all exhausted" message) into client format. */
   formatNotice?: (text: string) => string;
   messages: { exhausted: string; gaveUp: string };
@@ -111,11 +117,11 @@ export function createRouter(config: RouterConfig) {
     return { index, endsAt: (index + 1) * every };
   }
 
-  function cacheKey(transcript: TranscriptItem[]) {
+  function cacheKey(transcript: TranscriptItem[], context: string) {
     const turns = transcript.map((t) =>
       t.role === "user" ? `u:${normalize(t.text)}` : t.role === "assistant" ? `a:${t.text.trim()}` : "",
     );
-    return hash(`${promptVersion}|${cacheWindow().index}|${turns.join("\n")}`);
+    return hash(`${promptVersion}|${cacheWindow().index}|${context}|${turns.join("\n")}`);
   }
 
   async function runTurn(input: {
@@ -124,6 +130,8 @@ export function createRouter(config: RouterConfig) {
     signal: AbortSignal;
     /** When set, the final answer is stored so a disconnected client can fetch it later. */
     requestId?: string;
+    /** Per-request system prompt text (e.g. the user's default origin); part of the cache key. */
+    context?: string;
   }): Promise<TurnResult> {
     const { signal, requestId } = input;
     // Remember the answer (and tools) as they're emitted, for the stored result.
@@ -164,7 +172,7 @@ export function createRouter(config: RouterConfig) {
 
     // 1. Cache.
     const useCache = Boolean(config.cache) && (config.cache?.shouldCache?.(transcript) ?? true);
-    const key = useCache ? cacheKey(transcript) : "";
+    const key = useCache ? cacheKey(transcript, input.context ?? "") : "";
     const [cached, benched, all] = await Promise.all([
       useCache ? config.store.cacheGet(config.app, key) : Promise.resolve(null),
       config.store.getBenched(config.app),
@@ -208,6 +216,7 @@ export function createRouter(config: RouterConfig) {
             const system =
               (config.prompts[candidate.prompt] ?? config.prompts.full) +
               (config.systemSuffix?.() ?? "") +
+              (input.context ?? "") +
               (lastRound ? "\n\nNo more tool calls are available: write the final answer now using the tool results above." : "");
             const r = await provider.round({
               model: candidate.model,
@@ -220,6 +229,9 @@ export function createRouter(config: RouterConfig) {
             if (r.calls.length === 0) {
               answer = finalize(r.text);
               if (!answer) throw new ProviderError("empty or unusable answer", 502);
+              if (toolLog.length === 0 && index < queue.length - 1 && config.needsTools?.(answer)) {
+                throw new ProviderError("answered with data but called no tools", 422);
+              }
             }
             log.attempts.push({
               model: candidateKey(candidate),
@@ -239,9 +251,12 @@ export function createRouter(config: RouterConfig) {
               error: `${err.detail ? `${err.detail}: ` : ""}${err.message}`.slice(0, 200),
               ms: Date.now() - attemptStart,
             });
-            const until = Date.now() + benchMs(err);
-            benched[candidateKey(candidate)] = until;
-            writes.push(config.store.bench(config.app, candidateKey(candidate), until, err.status, err.message));
+            // Skipping tools is a one-off slip, not a reason to rest the model.
+            if (err.status !== 422) {
+              const until = Date.now() + benchMs(err);
+              benched[candidateKey(candidate)] = until;
+              writes.push(config.store.bench(config.app, candidateKey(candidate), until, err.status, err.message));
+            }
             index++;
           }
         }

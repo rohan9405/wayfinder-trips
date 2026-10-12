@@ -42,7 +42,27 @@ const CITY_OVERRIDES: Record<string, string> = {
   LIS: "Lisbon",
   BCN: "Barcelona",
   COK: "Kochi",
+  KUL: "Kuala Lumpur",
+  HAN: "Hanoi",
+  MNL: "Manila",
+  MRU: "Mauritius",
+  SEZ: "Seychelles",
+  PBH: "Paro",
+  // Hubs whose dataset municipality is a suburb rather than the city people know.
+  NRT: "Tokyo",
+  TPE: "Taipei",
+  MCT: "Muscat",
+  FRA: "Frankfurt",
+  MXP: "Milan",
+  BRU: "Brussels",
+  ATH: "Athens",
+  IAD: "Washington",
+  GOX: "Goa",
+  NGO: "Nagoya",
 };
+
+/** "Orio al Serio (BG)" → "Orio al Serio", "Manchester, Greater Manchester" → "Manchester". */
+const tidyCity = (city: string) => city.replace(/\s*\([^)]*\)/g, "").split(/\s*[,/]\s*/)[0].trim() || city;
 
 // Common names that don't match the dataset's city field.
 const ALIASES: Record<string, string> = {
@@ -97,6 +117,12 @@ const ALIASES: Record<string, string> = {
   lisbon: "LIS",
   amsterdam: "AMS",
   "cape town": "CPT",
+  mauritius: "MRU",
+  seychelles: "SEZ",
+  bhutan: "PBH",
+  langkawi: "LGK",
+  "da nang": "DAD",
+  krabi: "KBV",
 };
 
 const countryNames = new Intl.DisplayNames(["en"], { type: "region" });
@@ -110,7 +136,7 @@ const countryName = (iso: string) => {
 
 export const AIRPORTS: Airport[] = (raw as Row[]).map(([code, city, iso, lat, lon, size, name]) => ({
   code,
-  city: CITY_OVERRIDES[code] ?? city,
+  city: CITY_OVERRIDES[code] ?? tidyCity(city),
   country: countryName(iso),
   countryCode: iso,
   lat,
@@ -130,6 +156,21 @@ const norm = (s: string) =>
     .replace(/[^a-z0-9 ]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+
+// Major gateways with wide domestic and international networks. OurAirports' "large" size is too
+// broad (it covers Surat, for example), so these mark the big airports: the default origin near
+// one, and the gateways listed first when suggesting a region.
+const HUBS = new Set(
+  (
+    "DEL BOM BLR MAA CCU HYD AMD COK PNQ GOX GOI JAI LKO TRV ATQ CCJ GAU " +
+    "CMB KTM DAC MLE DXB AUH DOH BAH MCT RUH JED SIN KUL BKK HKT CGK DPS MNL SGN HAN HKG TPE ICN NRT HND KIX PEK PKX PVG CAN " +
+    "NGO CTS FUK OKA PUS CEB PEN CNX DAD DMK " +
+    "LHR LGW MAN CDG FRA MUC AMS MAD BCN FCO MXP ZRH VIE CPH DUB BRU LIS ATH IST WAW PRG " +
+    "JFK EWR LAX SFO ORD ATL DFW IAH IAD SEA MIA BOS YYZ YVR YUL MEX GRU EZE BOG LIM SCL " +
+    "SYD MEL BNE PER AKL JNB CPT CAI NBO ADD LOS CMN"
+  ).split(" "),
+);
+export const isHub = (code: string) => HUBS.has(code);
 
 /** Exact IATA lookup. */
 export function airportByCode(code: string | null | undefined): Airport | undefined {

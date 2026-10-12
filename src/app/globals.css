@@ -1129,6 +1129,63 @@ button.tc-cal__day:hover {
   stroke-width: 2;
 }
 
+/* Assumed origin */
+.tc-origin {
+  display: grid;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--openui-radius-m);
+  border: 1px dashed var(--openui-border-default, var(--openui-text-neutral-secondary));
+  font-size: 13px;
+  color: var(--openui-text-neutral-primary);
+}
+.tc-origin__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.tc-origin__row > span {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.tc-origin__row > svg {
+  flex: none;
+}
+.tc-origin__picker {
+  display: grid;
+  gap: 4px;
+}
+.tc-origin__input {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--openui-radius-s, 6px);
+  border: 1px solid var(--openui-border-default, var(--openui-text-neutral-secondary));
+  background: var(--openui-sunk);
+  color: var(--openui-text-neutral-primary);
+  font: inherit;
+}
+.tc-origin__options {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.tc-origin__options button {
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--openui-radius-s, 6px);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.tc-origin__options button:hover,
+.tc-origin__options button:focus-visible {
+  background: var(--openui-sunk);
+}
+
 /* Insights */
 .tc-insights {
   display: grid;

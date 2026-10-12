@@ -27,7 +27,9 @@ const schemas = {
     origin: airportCode,
     month: z.number().int().min(1).max(12).optional(),
     interests: z.array(z.string()).optional(),
-    region: z.enum(REGION_NAMES as [string, ...string[]]).optional(),
+    regions: z.array(z.enum(REGION_NAMES as [string, ...string[]])).optional(),
+    countries: z.array(z.string().regex(/^[A-Za-z]{2}$/, "ISO country code")).optional(),
+    visa: z.enum(["visa_free", "easy"]).optional(),
     max_flight_price: z.number().positive().optional(),
     currency,
   }),
@@ -97,7 +99,7 @@ export const toolDeclarations: { name: ToolName; description: string; parameters
   {
     name: "suggest_destinations",
     description:
-      "Suggest destinations reachable from an origin airport, ranked by the traveller's interests, season and fare. Use for open-ended discovery such as 'where should I go in March?' or 'cheap beach trips', and with `region` when the user names a region or country with several airports ('flights to Europe') to list the entry points to choose from.",
+      "Suggest destinations reachable from an origin airport, ranked by the traveller's interests, season and fare. Use for open-ended discovery such as 'where should I go in March?' or 'cheap beach trips', with `regions` when the user names a region or country with several airports ('flights to Europe') to list the entry points to choose from, and with `visa` for visa constraints. Each result has visaForIndians.",
     parameters: {
       type: "object",
       properties: {
@@ -108,10 +110,22 @@ export const toolDeclarations: { name: ToolName; description: string; parameters
           items: { type: "string" },
           description: "e.g. beach, mountains, food, culture, nightlife, budget, honeymoon, family",
         },
-        region: {
+        regions: {
+          type: "array",
+          items: { type: "string", enum: REGION_NAMES },
+          description:
+            "Limit to these regions, e.g. [\"europe\"] for 'flights to Europe'. Loose terms cover neighbours people group together: 'Southeast Asia' or 'abroad nearby' → [\"southeast_asia\", \"south_asia\"] (adds Sri Lanka, Maldives, Nepal, Bhutan).",
+        },
+        countries: {
+          type: "array",
+          items: { type: "string" },
+          description: "Limit to these countries as ISO codes, e.g. [\"JP\"] for 'flights to Japan' (lists its main airports)",
+        },
+        visa: {
           type: "string",
-          enum: REGION_NAMES,
-          description: "Limit to one region, e.g. europe for 'flights to Europe'",
+          enum: ["visa_free", "easy"],
+          description:
+            "Entry rules for Indian passports. visa_free: no visa to arrange. easy: also visa on arrival. For 'visa-free' requests use easy, and label which ones are on arrival.",
         },
         max_flight_price: { type: "number", description: "Max one-way fare per adult, in `currency`" },
         currency: currencyProp,
@@ -291,7 +305,9 @@ function execute(name: ToolName, data: unknown) {
         origin: d.origin,
         month: d.month,
         interests: d.interests,
-        region: d.region,
+        regions: d.regions,
+        countries: d.countries,
+        visa: d.visa,
         maxFlightPrice: d.max_flight_price,
         currency: d.currency,
       });

@@ -3,6 +3,7 @@ import { aguiChatHandler, aguiResultHandler } from "@/lib/llm-router";
 import { router } from "@/llm.config";
 import { saveChat } from "@/lib/chat-archive";
 import { identity } from "@/lib/guest-session";
+import { originContext } from "@/lib/home-airport";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -12,7 +13,7 @@ export const maxDuration = 300;
  * by the router configured in src/llm.config.ts. Turns finish even if the browser leaves;
  * GET ?id=<runId> returns a stored answer for a turn the browser didn't wait for.
  */
-const chatHandler = aguiChatHandler(router, { waitUntil });
+const chatHandler = aguiChatHandler(router, { waitUntil, context: originContext });
 
 export async function POST(req: Request) {
   const session = identity(req);

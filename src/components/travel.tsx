@@ -24,6 +24,7 @@ import {
   ChevronRight,
   Clock,
   Luggage,
+  MapPin,
   Minus,
   Plane,
   Plus,
@@ -670,7 +671,7 @@ const GridContext = createContext<{
 export const DestinationCard = defineComponent({
   name: "DestinationCard",
   description:
-    "One destination idea inside a DestinationGrid. Copy code, city, country, fromPrice and bestMonths exactly from suggest_destinations; tagline may be your own one-line pitch; weather is optional. The card opens its own details, fare calendar and flights in place.",
+    "One destination idea inside a DestinationGrid. Copy code, city, country, fromPrice and bestMonths exactly from suggest_destinations; tagline may be your own one-line pitch; weather is optional; visa is visaForIndians from the tool, when the user asked about visas (pass weather as \"\" if you skip it). The card opens its own details, fare calendar and flights in place.",
   props: z.object({
     code: z.string(),
     city: z.string(),
@@ -680,6 +681,7 @@ export const DestinationCard = defineComponent({
     currency,
     bestMonths: z.string(),
     weather: z.string().optional(),
+    visa: z.string().optional(),
   }),
   component: ({ props }) => {
     const grid = useContext(GridContext);
@@ -700,8 +702,9 @@ export const DestinationCard = defineComponent({
           ) : null}
           <p className="tc-dest__tagline" title={props.tagline}>{props.tagline}</p>
           <dl className="tc-dest__meta">
-            <div><dt>Best time</dt><dd>{props.bestMonths}</dd></div>
+            {props.bestMonths ? <div><dt>Best time</dt><dd>{props.bestMonths}</dd></div> : null}
             {props.weather ? <div><dt>Weather</dt><dd>{props.weather}</dd></div> : null}
+            {props.visa ? <div><dt>Visa</dt><dd>{props.visa}</dd></div> : null}
           </dl>
           <div className="tc-dest__footer">
             <button
@@ -1503,6 +1506,96 @@ const INSIGHT_ICONS = {
   weather: CloudSun,
   tip: Lightbulb,
 } as const;
+
+// ── Assumed origin ───────────────────────────────────────────────────────
+
+type AirportOption = { code: string; city: string; country: string };
+
+export const OriginNote = defineComponent({
+  name: "OriginNote",
+  description:
+    "Calls out an assumed departure airport and lets the user change it in place. Use only with the DEFAULT ORIGIN given at the end of the instructions, exactly as given there, and only when the user hasn't named where they fly from. source: location (nearest large airport to the user) or saved (chosen earlier).",
+  props: z.object({
+    code: z.string(),
+    city: z.string(),
+    source: z.enum(["location", "saved"]),
+  }),
+  component: ({ props }) => {
+    const triggerAction = useTriggerAction();
+    const isStreaming = useIsStreaming();
+    const [editing, setEditing] = useState(false);
+    const [query, setQuery] = useState("");
+    const [options, setOptions] = useState<AirportOption[]>([]);
+
+    useEffect(() => {
+      const q = query.trim();
+      if (q.length < 2) return setOptions([]);
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => {
+        fetch(`/api/airports?search=${encodeURIComponent(q)}`, { signal: ctrl.signal })
+          .then((r) => r.json())
+          .then((list: AirportOption[]) => setOptions(Array.isArray(list) ? list : []))
+          .catch(() => {});
+      }, 200);
+      return () => {
+        clearTimeout(timer);
+        ctrl.abort();
+      };
+    }, [query]);
+
+    const choose = (a: AirportOption) => {
+      // Remembered for later chats; the server reads it as the default origin.
+      document.cookie = `wf_origin=${a.code}; Path=/; Max-Age=${365 * 86_400}; SameSite=Lax`;
+      setEditing(false);
+      triggerAction(`Fly from ${a.city} (${a.code}) instead.`);
+    };
+
+    return (
+      <div className="tc-origin">
+        <div className="tc-origin__row">
+          <MapPin size={16} aria-hidden />
+          <span>
+            Flying from <span className="tc-strong">{props.city} ({props.code})</span>
+            <span className="tc-muted">
+              {" "}
+              · {props.source === "saved" ? "your saved departure airport" : "nearest major airport to you"}
+            </span>
+          </span>
+          <Button size="small" variant="tertiary" disabled={isStreaming} onClick={() => setEditing((e) => !e)}>
+            {editing ? "Cancel" : "Change"}
+          </Button>
+        </div>
+        {editing && (
+          <div className="tc-origin__picker">
+            <input
+              className="tc-origin__input"
+              autoFocus
+              placeholder="City or airport, e.g. Mumbai"
+              aria-label="Departure city or airport"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && options[0]) choose(options[0]);
+                if (e.key === "Escape") setEditing(false);
+              }}
+            />
+            {options.length > 0 && (
+              <ul className="tc-origin__options" role="listbox" aria-label="Airports">
+                {options.map((a) => (
+                  <li key={a.code}>
+                    <button type="button" role="option" aria-selected={false} onClick={() => choose(a)}>
+                      <span className="tc-strong">{a.city}</span> <span className="tc-muted">{a.code} · {a.country}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  },
+});
 
 export const TravelInsights = defineComponent({
   name: "TravelInsights",

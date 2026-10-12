@@ -84,6 +84,9 @@ export const router = createRouter({
     shouldCache: (t) => t.filter((x) => x.role === "user").length <= 4,
   },
   finalizeAnswer: finalizeOpenUI,
+  // Insights, fares and destination cards must come from this turn's tools, never memory.
+  needsTools: (answer) =>
+    /\b(TravelInsights|DestinationGrid|PriceCalendar|FlightResults|FlightReview|TripDates|Itinerary|TripBudget)\(/.test(answer),
   // Button clicks arrive wrapped as "]]>openui:content\n…\n]]>openui:context\n…"; log the readable part.
   questionLabel: (text) => text.match(/openui:content\n([\s\S]*?)\n\]\]>openui:context/)?.[1] ?? text,
   formatNotice: (text) => `root = Card([note])\nnote = TextContent(${JSON.stringify(text)})\n`,

@@ -14,6 +14,8 @@ export function aguiChatHandler(
     waitUntil?: (p: Promise<unknown>) => void;
     /** Hard stop for a turn, below the platform's function time limit. */
     maxTurnMs?: number;
+    /** Per-request system prompt text, e.g. the user's default origin. */
+    context?: (req: Request) => string;
   } = {},
 ) {
   const maxTurns = opts.maxTurns ?? 24;
@@ -53,6 +55,7 @@ export function aguiChatHandler(
         transcript,
         signal: work.signal,
         requestId,
+        context: opts.context?.(req),
         emit: async (event) => {
           if (event.type === "tool_call") {
             send({ type: "TOOL_CALL_START", toolCallId: event.call.id, toolCallName: event.call.name });

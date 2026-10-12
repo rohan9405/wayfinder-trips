@@ -10,8 +10,9 @@ export type Cabin = "economy" | "premium_economy" | "business";
 
 const RATES: Record<Currency, number> = { USD: 1, INR: 84, EUR: 0.92 };
 
-import { airportByCode, resolveAirport, suggestAirports, type Airport } from "./airports";
+import { AIRPORTS, airportByCode, isHub, resolveAirport, suggestAirports, type Airport } from "./airports";
 import { describeEvent, eventFareFactor, eventsInMonth, eventsOn } from "./events";
+import { VISA_CHECKED, visaFor, visaMatches } from "./visa";
 
 interface Destination {
   airport: string;
@@ -46,6 +47,14 @@ const DESTINATIONS: Destination[] = [
   { airport: "ZRH", tagline: "Alpine lakes, scenic trains and snowy peaks", interests: ["mountains", "nature", "luxury", "adventure"], bestMonths: [6, 7, 8, 12, 1], dailyBudgetUsd: 260, climate: { winter: "-2–4°C, snow in the Alps", spring: "5–16°C", summer: "14–25°C", autumn: "6–15°C" } },
   { airport: "JFK", tagline: "Skyscrapers, Broadway and every cuisine on earth", interests: ["city", "food", "shopping", "culture"], bestMonths: [4, 5, 6, 9, 10, 12], dailyBudgetUsd: 260, climate: { winter: "-3–5°C", spring: "8–20°C", summer: "21–30°C", autumn: "10–21°C" } },
   { airport: "SYD", tagline: "Harbour views, surf beaches and coastal walks", interests: ["beach", "city", "nature", "adventure"], bestMonths: [10, 11, 12, 1, 2, 3], dailyBudgetUsd: 190, climate: { winter: "Mild summer (Dec–Feb), 19–27°C", spring: "Autumn, 14–23°C", summer: "Winter, 8–17°C", autumn: "Spring, 12–23°C" } },
+  { airport: "KUL", tagline: "Petronas Towers, hawker food and easy day trips", interests: ["city", "food", "shopping", "budget", "family"], bestMonths: [1, 2, 6, 7, 8], dailyBudgetUsd: 70, climate: { winter: "24–32°C, showers", spring: "25–33°C, humid", summer: "25–33°C, drier", autumn: "24–32°C, wetter" } },
+  { airport: "LGK", tagline: "Duty-free island with rainforest, cable car and quiet beaches", interests: ["beach", "nature", "relaxation", "honeymoon", "family"], bestMonths: [12, 1, 2, 3], dailyBudgetUsd: 70, climate: { winter: "24–32°C, dry", spring: "25–33°C", summer: "Wetter, 25–31°C", autumn: "Rainiest months" } },
+  { airport: "KBV", tagline: "Limestone cliffs, Railay beach and island tours", interests: ["beach", "adventure", "nature", "relaxation"], bestMonths: [11, 12, 1, 2, 3, 4], dailyBudgetUsd: 60, climate: { winter: "24–32°C, dry", spring: "26–34°C", summer: "Monsoon, rough seas", autumn: "25–31°C, wet" } },
+  { airport: "DAD", tagline: "Beaches, Hoi An's lantern town and the Golden Bridge", interests: ["beach", "culture", "food", "budget"], bestMonths: [2, 3, 4, 5, 6, 7, 8], dailyBudgetUsd: 50, climate: { winter: "Cool and rainy, 19–25°C", spring: "22–30°C, dry", summer: "26–35°C, sunny", autumn: "Typhoon and flood season" } },
+  { airport: "MRU", tagline: "Lagoons, waterfalls and a large Indian-origin community", interests: ["beach", "honeymoon", "luxury", "relaxation", "nature"], bestMonths: [5, 6, 9, 10, 11, 12], dailyBudgetUsd: 150, climate: { winter: "Summer, 24–31°C, humid", spring: "Autumn, 22–29°C", summer: "Winter, 18–25°C, dry", autumn: "Spring, 20–27°C" } },
+  { airport: "SEZ", tagline: "Granite-boulder beaches and turquoise island hops", interests: ["beach", "honeymoon", "luxury", "nature"], bestMonths: [4, 5, 10, 11], dailyBudgetUsd: 250, climate: { winter: "27–31°C, wetter", spring: "28–31°C, calm seas", summer: "25–28°C, breezy", autumn: "26–30°C, calm seas" } },
+  { airport: "ALA", tagline: "Tian Shan mountains, alpine lakes and a leafy city", interests: ["mountains", "nature", "adventure", "budget"], bestMonths: [5, 6, 7, 8, 9], dailyBudgetUsd: 60, climate: { winter: "-8–2°C, snow", spring: "5–20°C", summer: "18–30°C", autumn: "5–18°C" } },
+  { airport: "PBH", tagline: "Tiger's Nest, dzongs and Himalayan valleys", interests: ["mountains", "culture", "nature", "adventure"], bestMonths: [3, 4, 5, 10, 11], dailyBudgetUsd: 150, climate: { winter: "-2–12°C", spring: "8–20°C, rhododendrons", summer: "Monsoon", autumn: "8–22°C, clear" } },
   { airport: "CPT", tagline: "Table Mountain, winelands and dramatic coastline", interests: ["nature", "adventure", "food", "beach"], bestMonths: [11, 12, 1, 2, 3], dailyBudgetUsd: 110, climate: { winter: "Summer, 16–27°C", spring: "Autumn, 12–23°C", summer: "Winter, 8–18°C, wet", autumn: "Spring, 11–21°C" } },
 ];
 
@@ -219,11 +228,32 @@ const REGIONS: Record<string, string[]> = {
 };
 export const REGION_NAMES = Object.keys(REGIONS);
 
+// Regions travellers often lump together ("Southeast Asia" trips that include Sri Lanka or the
+// Maldives). Guided places there are offered as nearby alternatives.
+const NEIGHBOURS: Record<string, string[]> = {
+  southeast_asia: ["south_asia", "east_asia"],
+  south_asia: ["southeast_asia", "middle_east"],
+  east_asia: ["southeast_asia"],
+  middle_east: ["south_asia", "europe", "africa"],
+  europe: ["middle_east", "africa"],
+  africa: ["middle_east", "europe"],
+  americas: [],
+  oceania: ["southeast_asia"],
+};
+
+/**
+ * Destination ideas from an origin. Open-ended discovery ranks the curated guides above (they
+ * know interests, seasons and climate). Region, country or visa requests draw on every large
+ * airport there instead, so the answer isn't limited to the guides: those without a guide come
+ * back with `hasGuide: false` and only facts we can compute (fare, flight time, visa).
+ */
 export function suggestDestinations(input: {
   origin: string;
   month?: number;
   interests?: string[];
-  region?: string;
+  regions?: string[];
+  countries?: string[];
+  visa?: "visa_free" | "easy";
   maxFlightPrice?: number;
   currency: Currency;
   limit?: number;
@@ -233,52 +263,125 @@ export function suggestDestinations(input: {
   const interests = (input.interests ?? []).map((i) => i.toLowerCase());
   const travelDate = month ? nextDateInMonth(month) : addDays(today(), 30);
 
-  const regionCountries = input.region ? REGIONS[input.region] : undefined;
-  if (input.region && !regionCountries) {
-    throw new TravelDataError(`Unknown region "${input.region}". Use one of: ${REGION_NAMES.join(", ")}.`);
+  const unknown = (input.regions ?? []).filter((r) => !REGIONS[r]);
+  if (unknown.length) {
+    throw new TravelDataError(`Unknown region "${unknown[0]}". Use any of: ${REGION_NAMES.join(", ")}.`);
   }
+  const places = [
+    ...(input.regions ?? []).flatMap((r) => REGIONS[r]),
+    ...(input.countries ?? []).map((c) => c.trim().toUpperCase()),
+  ];
+  const filtered = places.length > 0 || Boolean(input.visa);
 
-  const scored = DESTINATIONS.filter(
-    (d) => d.airport !== origin.code && (!regionCountries || regionCountries.includes(airportByCode(d.airport)!.countryCode)),
-  ).map((d) => {
-    const airport = airportByCode(d.airport)!;
-    const fare = convert(dailyFareUsd(origin, airport, travelDate), input.currency);
-    const interestMatches = interests.filter((i) => d.interests.some((x) => x.includes(i) || i.includes(x)));
-    const inSeason = month ? d.bestMonths.includes(month) : true;
-    const score = interestMatches.length * 3 + (inSeason ? 2 : 0) - fare / convert(1000, input.currency);
-    return {
-      code: d.airport,
-      city: airport.city,
-      country: airport.country,
-      tagline: d.tagline,
-      interests: d.interests,
-      bestMonths: d.bestMonths.map(monthName),
-      inSeason,
-      weather: month ? d.climate[season(month)] : undefined,
-      flightHours: Math.round((distanceKm(origin, airport) / 780 + 0.6) * 10) / 10,
-      fromPrice: fare,
-      dailyBudget: convert(d.dailyBudgetUsd, input.currency),
-      eventsInMonth: month
-        ? eventsInMonth(airport.code, travelDate.slice(0, 7), true).map((e) => `${e.name} (${e.dates}, ${describeEvent(e).effect})`)
-        : [],
-      score,
-    };
-  });
+  const guides = new Map(DESTINATIONS.map((d) => [d.airport, d]));
+  const pool = filtered
+    ? AIRPORTS.filter((a) => a.size === "L" || guides.has(a.code))
+    : DESTINATIONS.map((d) => airportByCode(d.airport)!);
 
-  const results = scored
+  const scored = pool
+    .filter(
+      (a) =>
+        a.code !== origin.code &&
+        // "South Asia" from Delhi means abroad, not domestic trips.
+        (!places.length || (places.includes(a.countryCode) && a.countryCode !== origin.countryCode)) &&
+        (!input.visa || visaMatches(visaFor(a.countryCode).kind, input.visa)),
+    )
+    .map((airport) => {
+      const guide = guides.get(airport.code);
+      const fare = convert(dailyFareUsd(origin, airport, travelDate), input.currency);
+      const interestMatches = guide
+        ? interests.filter((i) => guide.interests.some((x) => x.includes(i) || i.includes(x)))
+        : [];
+      const inSeason = month && guide ? guide.bestMonths.includes(month) : undefined;
+      // Guides and hubs first (known, well-connected places), then international airports,
+      // then cheaper and in-season ones.
+      const score =
+        (guide ? 4 : isHub(airport.code) ? 2 : /international/i.test(airport.name) ? 1 : 0) +
+        interestMatches.length * 3 +
+        (inSeason ? 2 : 0) -
+        fare / convert(1000, input.currency);
+      return {
+        code: airport.code,
+        city: airport.city,
+        country: airport.country,
+        countryCode: airport.countryCode,
+        hasGuide: Boolean(guide),
+        tagline: guide?.tagline,
+        interests: guide?.interests,
+        bestMonths: guide?.bestMonths.map(monthName),
+        visaForIndians: visaFor(airport.countryCode).note,
+        inSeason,
+        weather: month && guide ? guide.climate[season(month)] : undefined,
+        flightHours: Math.round((distanceKm(origin, airport) / 780 + 0.6) * 10) / 10,
+        fromPrice: fare,
+        dailyBudget: convert(guide?.dailyBudgetUsd ?? defaultDailyUsd(airport), input.currency),
+        eventsInMonth: month
+          ? eventsInMonth(airport.code, travelDate.slice(0, 7), true).map((e) => `${e.name} (${e.dates}, ${describeEvent(e).effect})`)
+          : [],
+        score,
+      };
+    })
     .filter((d) => (input.maxFlightPrice ? d.fromPrice <= input.maxFlightPrice : true))
-    .sort((a, b) => b.score - a.score)
-    // A region request is a choice of entry point, so show every gateway we know there.
-    .slice(0, input.limit ?? (regionCountries ? 8 : 6))
-    .map(({ score: _score, ...rest }) => rest);
+    .sort((a, b) => b.score - a.score);
+
+  // One airport per city (Bangkok and Tokyo have two), and at most 3 per country when the
+  // request spans several countries, so a region shows a spread of countries.
+  const capPerCountry = places.length === 1 || !filtered ? Infinity : 3;
+  const picked: (typeof scored)[number][] = [];
+  const perCountry = new Map<string, number>();
+  for (const d of scored) {
+    const count = perCountry.get(d.countryCode) ?? 0;
+    if (count >= capPerCountry || picked.some((p) => p.countryCode === d.countryCode && p.city === d.city)) continue;
+    perCountry.set(d.countryCode, count + 1);
+    picked.push(d);
+    // A region or visa request is a choice between everything that matches, so show plenty.
+    if (picked.length >= (input.limit ?? (places.length === 1 ? 10 : filtered ? 14 : 6))) break;
+  }
+  const results = picked.map(({ score: _score, countryCode: _cc, ...rest }) => ({
+    ...rest,
+    ...(rest.hasGuide ? {} : { airportName: airportByCode(rest.code)!.name }),
+  }));
+
+  // Guided places just outside the requested regions that pass the same filters.
+  const neighbourCountries = (input.regions ?? [])
+    .flatMap((r) => NEIGHBOURS[r] ?? [])
+    .filter((r) => !input.regions!.includes(r))
+    .flatMap((r) => REGIONS[r]);
+  const nearbyAlternatives = neighbourCountries.length
+    ? DESTINATIONS.map((d) => airportByCode(d.airport)!)
+        .filter(
+          (a) =>
+            neighbourCountries.includes(a.countryCode) &&
+            a.countryCode !== origin.countryCode &&
+            (!input.visa || visaMatches(visaFor(a.countryCode).kind, input.visa)),
+        )
+        .map((a) => {
+          const guide = DESTINATIONS.find((d) => d.airport === a.code)!;
+          return {
+            code: a.code,
+            city: a.city,
+            country: a.country,
+            tagline: guide.tagline,
+            bestMonths: guide.bestMonths.map(monthName),
+            visaForIndians: visaFor(a.countryCode).note,
+            fromPrice: convert(dailyFareUsd(origin, a, travelDate), input.currency),
+          };
+        })
+        .filter((d) => (input.maxFlightPrice ? d.fromPrice <= input.maxFlightPrice : true))
+        .sort((a, b) => a.fromPrice - b.fromPrice)
+        .slice(0, 4)
+    : [];
 
   return {
     origin: `${origin.city} (${origin.code})`,
-    region: input.region ?? "any",
+    regions: input.regions ?? "any",
+    countries: input.countries ?? "any",
+    visaFilter: input.visa ?? "none",
     month: month ? monthName(month) : "any",
     currency: input.currency,
-    note: "fromPrice is an indicative one-way economy fare for one adult; dailyBudget is a rough mid-range spend per person per day.",
+    note: `fromPrice is an indicative one-way economy fare for one adult; dailyBudget is a rough mid-range spend per person per day. visaForIndians is for Indian passport holders as of ${VISA_CHECKED}; rules change, so tell users to check before booking. Entries with hasGuide false have no tagline or bestMonths from us; their city is the airport's municipality, so use airportName to name the city people know (e.g. Spata → Athens).`,
     destinations: results,
+    nearbyAlternatives,
   };
 }
 
