@@ -1,9 +1,10 @@
 "use client";
 
-import { AgentInterface, useSystemThemeMode } from "@openuidev/react-ui";
+import { AgentInterface } from "@openuidev/react-ui";
 import { CalendarDays, Compass, Map, Plane, Scale, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import { QuotaBadge } from "@/components/quota-badge";
+import { ThemeToggle, useThemeMode } from "@/components/theme-toggle";
 import { AdminChats } from "@/components/admin-chats";
 import { createLocalChatStorage, createPersistentChatLLM } from "@/lib/chat-storage";
 import { library } from "@/library";
@@ -48,7 +49,7 @@ const starters = [
 
 export default function Page() {
   const shell = useRef<HTMLDivElement>(null);
-  const mode = useSystemThemeMode();
+  const [mode, toggleMode] = useThemeMode();
   const theme = useMemo(() => ({ mode }), [mode]);
   const storage = useMemo(() => createLocalChatStorage(CHAT_URL), []);
 
@@ -76,7 +77,7 @@ export default function Page() {
         starters={starters}
         starterVariant="long"
       >
-        {/* Default sidebar layout, plus the daily answer counter pinned to the bottom. */}
+        {/* Default sidebar layout, plus the daily answer counter and theme toggle at the bottom. */}
         <AgentInterface.Sidebar>
           <div className="openui-agent-sidebar-actions">
             <AgentInterface.SidebarHeader />
@@ -88,7 +89,10 @@ export default function Page() {
             <AgentInterface.ThreadList />
             <AdminChats />
           </AgentInterface.SidebarContent>
-          <QuotaBadge />
+          <div className="wf-sidebar-footer">
+            <QuotaBadge />
+            <ThemeToggle mode={mode} onToggle={toggleMode} />
+          </div>
         </AgentInterface.Sidebar>
         <AgentInterface.Welcome
           title="Where to next?"

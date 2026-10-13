@@ -248,20 +248,23 @@ body {
   --tc-ask-fg: hsl(265 60% 45%);
   --tc-ask-border: hsl(265 60% 55% / 0.45);
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --tc-c1: hsl(212 80% 62%);
-    --tc-c2: hsl(160 55% 52%);
-    --tc-c3: hsl(36 90% 60%);
-    --tc-c4: hsl(275 60% 70%);
-    --tc-c5: hsl(345 75% 66%);
-    --tc-cheap-fg: hsl(140 60% 70%);
-    --tc-pricey-fg: hsl(10 80% 75%);
-    --tc-fast-fg: hsl(210 80% 75%);
-    --tc-warn-fg: hsl(38 90% 70%);
-    --tc-ask-fg: hsl(265 80% 78%);
-    --tc-ask-border: hsl(265 70% 70% / 0.5);
-  }
+/* Dark mode: set on <html> by the theme toggle (system setting until the visitor picks). */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --tc-c1: hsl(212 80% 62%);
+  --tc-c2: hsl(160 55% 52%);
+  --tc-c3: hsl(36 90% 60%);
+  --tc-c4: hsl(275 60% 70%);
+  --tc-c5: hsl(345 75% 66%);
+  --tc-cheap-fg: hsl(140 60% 70%);
+  --tc-pricey-fg: hsl(10 80% 75%);
+  --tc-fast-fg: hsl(210 80% 75%);
+  --tc-warn-fg: hsl(38 90% 70%);
+  --tc-ask-fg: hsl(265 80% 78%);
+  --tc-ask-border: hsl(265 70% 70% / 0.5);
 }
 
 .tc-muted {
@@ -1265,8 +1268,98 @@ button.tc-cal__day:hover {
 }
 
 /* Daily answer counter (sidebar footer, styled like sidebar items) */
-.tc-quota {
+/* Sidebar footer: answers left, then the theme toggle. */
+.wf-sidebar-footer {
   margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* Icons line up with the guest/admin text above. */
+  padding-inline: 4px;
+}
+.app-shell .openui-agent-container--mobile .wf-sidebar-footer {
+  padding-inline: 20px;
+}
+.openui-agent-sidebar-container--collapsed .wf-sidebar-footer {
+  padding-inline: 0;
+}
+.wf-theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--openui-space-s, 8px);
+  width: 100%;
+  padding: var(--openui-space-s, 8px);
+  border: 0;
+  border-radius: var(--openui-radius-m);
+  background: none;
+  color: var(--openui-text-neutral-secondary);
+  font: var(--openui-text-body-sm, 400 13px/1.4 var(--openui-font-body, system-ui, sans-serif));
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.wf-theme-toggle:hover {
+  background: var(--openui-sunk-light, var(--openui-sunk));
+  color: var(--openui-text-neutral-primary);
+}
+.wf-theme-toggle:focus-visible {
+  outline: 2px solid var(--openui-border-interactive, currentColor);
+  outline-offset: 1px;
+}
+.wf-theme-toggle > svg {
+  flex: none;
+}
+.wf-theme-toggle__text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wf-theme-toggle__switch {
+  flex: none;
+  position: relative;
+  width: 28px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--openui-border-default);
+  transition: background 0.2s;
+}
+.wf-theme-toggle__switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--openui-background, #fff);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  transition: transform 0.2s;
+}
+/* Which icon, label and switch position show follows <html data-theme>. */
+:root:not([data-theme="dark"]) .wf-theme-toggle__dark,
+:root[data-theme="dark"] .wf-theme-toggle__light {
+  display: none;
+}
+:root[data-theme="dark"] .wf-theme-toggle__switch {
+  background: var(--openui-text-neutral-secondary);
+}
+:root[data-theme="dark"] .wf-theme-toggle__switch::after {
+  transform: translateX(12px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .wf-theme-toggle__switch,
+  .wf-theme-toggle__switch::after {
+    transition: none;
+  }
+}
+.openui-agent-sidebar-container--collapsed .wf-theme-toggle__text,
+.openui-agent-sidebar-container--collapsed .wf-theme-toggle__switch {
+  display: none;
+}
+
+.tc-quota {
   display: flex;
   align-items: center;
   gap: var(--openui-space-s, 8px);
